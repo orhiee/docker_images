@@ -78,3 +78,4 @@ COPY run.sh /opt/zeek/
 RUN chmod +x /opt/zeek/run.sh
 
 ENTRYPOINT ["/opt/zeek/run.sh"]
+

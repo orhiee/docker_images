@@ -23,6 +23,4 @@ echo ""
 echo "Starting docker build"
 echo "..."
 echo ""
-sudo $build_command="docker
-
-
+sudo $build_command
