@@ -4,7 +4,7 @@ Rpi4 4GB ram
 OS: 2021-05-07-raspios-buster-arm64-lite.img
 OS-updates: 2022.01.13
 
-### os prepred by:
+### host OS prepred by:
 #### Commands
 sudo apt update
 sudo apt -y upgrade
@@ -20,11 +20,14 @@ Build based on: https://github.com/zeek/zeek/blob/master/docker/Dockerfile
 ### changes:
 * added "net-tools" to install as zeek uses "ifconcig -a"
 
-* added "run.sh" as docker image entry point.
+* added "run_zeek.sh" as docker image entry point.
 
 * added threat intell feeds from https://github.com/CriticalPathSecurity/Zeek-Intelligence-Feeds
+** added script to update files from github
+** added cronjob (and installed cron) to run script every day 1AM
 
 * changed, log output to json from txt
 
 # issues:
-* threat intell feed, does NOT auto update!
+* threat intell.log does not populate
+    * if it works, it misses actual IOC hits.

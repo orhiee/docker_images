@@ -1,0 +1,47 @@
+
+# problem: there is an issue where the threal intel logs, intel.log is not created. 
+
+## setup info:
+* arm64:4.2.0-rc2
+* complied in docker based on zeek docker build guide
+
+
+## issue 1:
+the critical security intell from github does not work!
+
+## issue 2: 
+folowing the issue details here https://github.com/zeek/zeek/issues/1506 still doenst work
+
+
+## debugging attempts:
+
+### notes:
+* zeekctl debug - shows no errors, and intell is loaded. 
+* with criticalsecurity - no intel.log is created
+* following the github issue - intel.log is created but:
+	* not for all domains in intell list
+	* file format is checked for linux - still no fix
+	* intel hits are from the x509 logs for domains, 
+	* no intel.log for IP's
+* format of intel is the same as the docs, with extra columns
+	* removeing extra columns does not fix
+* 
+
+### run zeek to test OS/files/etc not network capture
+docker run --rm -d --name=zeek zeek_arm64:4.2.0-rc2
+docker exec -it zeek /bin/bash
+docker rm -f zeek
+
+### run zeek to test with network capture
+docker run --rm -d --name=zeek --privileged --net=host --cap-add=net_admin --cap-add=sys_nice zeek_arm64:4.2.0-rc2
+docker exec -it zeek /bin/bash
+docker rm -f zeek
+
+###location for logs:
+cd /usr/local/zeek/spool/zeek
+
+### test CriticalSecurity treat intell:
+tail /usr/local/zeek/share/zeek/site/Zeek-Intelligence-Feeds/abuse-ch-ipblocklist.intel
+tail /usr/local/zeek/share/zeek/site/Zeek-Intelligence-Feeds/cps_cobaltstrike_domain.intel
+
+

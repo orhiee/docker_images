@@ -1,0 +1,2 @@
+# crontab entry to update zeek threat intell db every day at 1 AM
+0 1 * * * sh /opt/zeek/update_Zeek-Intelligence-Feeds.sh >/dev/null 2>&1

@@ -56,6 +56,7 @@ RUN apt-get -q update \
      python3-git \
      python3-semantic-version \
      net-tools \
+     cron \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 ## added net-tools
@@ -72,9 +73,9 @@ RUN sed -i 's/use_json = F/use_json = T/g' /usr/local/zeek/share/zeek/base/frame
 ## enable treat intell: download and enable 
 RUN git clone https://github.com/CriticalPathSecurity/Zeek-Intelligence-Feeds.git /usr/local/zeek/share/zeek/site/Zeek-Intelligence-Feeds && echo "@load Zeek-Intelligence-Feeds" >> /usr/local/zeek/share/zeek/site/local.zeek
 
-## add run.sh
+## add run_zeek.sh & update_Zeek-Intelligence-Feeds.sh && crontab
 RUN mkdir -p /opt/zeek
-COPY run.sh /opt/zeek/
-RUN chmod +x /opt/zeek/run.sh
+COPY ./files_for_image/* /opt/zeek/
+RUN chmod +x /opt/zeek/run_zeek.sh && chmod +x /opt/zeek/update_Zeek-Intelligence-Feeds.sh && crontab /opt/zeek/crontab
 
-ENTRYPOINT ["/opt/zeek/run.sh"]
+ENTRYPOINT ["/opt/zeek/run_zeek.sh"]
