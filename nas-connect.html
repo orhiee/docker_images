@@ -2,206 +2,143 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>NAS Remote Connection</title>
+  <title>NAS Connection</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }
-    #container {
-      max-width: 600px;
-      margin: 0 auto;
-    }
-    input, button {
-      padding: 8px;
-      font-size: 1rem;
-    }
-    #status {
-      margin-top: 10px;
-      color: #555;
-    }
-    #iframeContainer {
-      margin-top: 20px;
-      display: none;
-    }
-    iframe {
-      width: 100%;
-      height: 600px;
-      border: 1px solid #ddd;
-    }
+    body { font-family: sans-serif; margin: 20px; }
+    #log { background: #f3f3f3; border: 1px solid #ccc; padding: 10px; height: 150px; overflow-y: scroll; }
+    #serviceFrame { width: 100%; height: 600px; border: none; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <div id="container">
-    <h2>Connect to NAS Service</h2>
-    <input type="text" id="connectionCode" placeholder="Enter connection code">
+  <h1>NAS Connection Client</h1>
+  <div>
+    <label for="connCode">Connection Code:</label>
+    <input type="text" id="connCode" placeholder="Enter unique code">
     <button id="connectBtn">Connect</button>
-    <div id="status"></div>
   </div>
-  <div id="iframeContainer">
-    <h3>Remote Service Interface</h3>
-    <iframe id="remoteInterface" src=""></iframe>
-  </div>
+  <div id="log"></div>
+  <button id="loadServiceBtn" style="display:none;">Load Service</button>
+  <iframe id="serviceFrame" style="display:none;"></iframe>
 
   <script>
-    (function() {
-      'use strict';
+    const connectBtn = document.getElementById('connectBtn');
+    const loadServiceBtn = document.getElementById('loadServiceBtn');
+    const logDiv = document.getElementById('log');
+    const serviceFrame = document.getElementById('serviceFrame');
+    let ws; // WebSocket for signaling
+    let pc; // RTCPeerConnection instance
+    let dataChannel; // RTCDataChannel instance
 
-      // Configuration for WebRTC and signaling
-      // const signalingServerUrl = 'wss://your.signaling.server'; // Replace with your central signaling server URL https://orhiee.github.io/docker_images/nas-connect.html
-      // const signalingServerUrl = 'https://orhiee.github.io/docker_images/nas-connect.html'; // Replace with your central signaling server URL
-      const signalingServerUrl = 'wss://orhiee.github.io/docker_images/nas-connect.html'; // Replace with your central signaling server URL
-      const rtcConfiguration = {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    function log(message) {
+      const para = document.createElement('p');
+      para.textContent = message;
+      logDiv.appendChild(para);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    connectBtn.addEventListener('click', async () => {
+      const connCode = document.getElementById('connCode').value.trim();
+      if (!connCode) {
+        alert("Please enter a connection code.");
+        return;
+      }
+      // Connect to the signaling server (update the URL as needed)
+      ws = new WebSocket("ws://central-signaling-server-address/ws");
+      ws.addEventListener('open', () => {
+        ws.send(JSON.stringify({ action: "register", code: connCode }));
+        log("Registered with signaling server.");
+        initiateWebRTC();
+      });
+      ws.addEventListener('message', async (event) => {
+        const msg = JSON.parse(event.data);
+        // Handle incoming signaling messages
+        if (msg.action === "offer") {
+          // In this case, this client is acting as the answerer (if needed)
+          // However, for this MVP, we assume the browser initiates the offer.
+        } else if (msg.action === "answer") {
+          log("Received answer from NAS agent.");
+          const remoteDesc = new RTCSessionDescription({
+            type: msg.type,
+            sdp: msg.sdp
+          });
+          await pc.setRemoteDescription(remoteDesc);
+        } else if (msg.action === "ice") {
+          log("Received ICE candidate from NAS agent.");
+          try {
+            await pc.addIceCandidate(msg.candidate);
+          } catch (e) {
+            console.error("Error adding ICE candidate:", e);
+          }
+        }
+      });
+      ws.addEventListener('error', (err) => {
+        log("WebSocket error: " + err);
+      });
+    });
+
+    async function initiateWebRTC() {
+      pc = new RTCPeerConnection();
+
+      // Create data channel
+      dataChannel = pc.createDataChannel("data");
+      dataChannel.onopen = () => {
+        log("Data channel open.");
+        // Enable the button to load the remote service interface.
+        loadServiceBtn.style.display = "block";
+      };
+      dataChannel.onmessage = (event) => {
+        log("Received message via data channel.");
+        try {
+          const response = JSON.parse(event.data);
+          // For this MVP, assume a successful HTTP proxy returns an HTML body.
+          if (response.body) {
+            serviceFrame.style.display = "block";
+            // Use srcdoc to load the remote service content inside the iframe.
+            serviceFrame.srcdoc = response.body;
+          } else if (response.error) {
+            log("Error from NAS agent: " + response.error);
+          }
+        } catch (e) {
+          log("Error parsing data channel message: " + e);
+        }
       };
 
-      let websocket;
-      let peerConnection;
-      const connectionCodeInput = document.getElementById('connectionCode');
-      const connectBtn = document.getElementById('connectBtn');
-      const statusEl = document.getElementById('status');
-      const iframeContainer = document.getElementById('iframeContainer');
-      const remoteInterfaceIframe = document.getElementById('remoteInterface');
-
-      // Utility: update status message
-      function setStatus(message) {
-        statusEl.textContent = message;
-        console.log(message);
-      }
-
-      // Utility: log and display errors
-      function handleError(error) {
-        console.error(error);
-        setStatus('Error: ' + error);
-      }
-
-      // Signaling: send a JSON message via WebSocket
-      function sendMessage(message) {
-        if (websocket && websocket.readyState === WebSocket.OPEN) {
-          websocket.send(JSON.stringify(message));
+      // Gather ICE candidates and send them via signaling
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({
+            action: "ice",
+            candidate: event.candidate
+          }));
         }
+      };
+
+      // Create offer and send to signaling server
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({
+          action: "offer",
+          sdp: pc.localDescription.sdp,
+          type: pc.localDescription.type
+        }));
+        log("Sent WebRTC offer.");
+      } catch (err) {
+        log("Error during offer creation: " + err);
       }
+    }
 
-      // Initialize and configure the RTCPeerConnection
-      function initPeerConnection() {
-        peerConnection = new RTCPeerConnection(rtcConfiguration);
-
-        // Handle local ICE candidates by sending them to the signaling server
-        peerConnection.onicecandidate = function(event) {
-          if (event.candidate) {
-            sendMessage({
-              type: 'ice',
-              candidate: event.candidate
-            });
-          }
-        };
-
-        // Monitor connection state and load remote service interface upon success
-        peerConnection.onconnectionstatechange = function() {
-          const state = peerConnection.connectionState;
-          console.log('Peer connection state:', state);
-          if (state === 'connected') {
-            setStatus('Peer connection established.');
-            loadRemoteInterface();
-          } else if (state === 'failed' || state === 'disconnected') {
-            setStatus('Peer connection failed or disconnected.');
-          }
-        };
-      }
-
-      // Create and send a WebRTC offer
-      function createAndSendOffer() {
-        peerConnection.createOffer()
-          .then(offer => peerConnection.setLocalDescription(offer))
-          .then(() => {
-            sendMessage({
-              type: 'offer',
-              offer: peerConnection.localDescription
-            });
-          })
-          .catch(handleError);
-      }
-
-      // Process an incoming answer
-      function handleAnswer(data) {
-        if (data.answer) {
-          peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
-            .catch(handleError);
-        }
-      }
-
-      // Add a received ICE candidate
-      function handleRemoteICECandidate(candidate) {
-        if (candidate) {
-          peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-            .catch(handleError);
-        }
-      }
-
-      // Establish WebSocket connection and initiate WebRTC signaling
-      function startConnection(connectionCode) {
-        websocket = new WebSocket(signalingServerUrl);
-
-        websocket.onopen = function() {
-          setStatus('Connected to signaling server.');
-          // Identify the session using the user-provided connection code
-          sendMessage({ type: 'join', code: connectionCode });
-          initPeerConnection();
-          createAndSendOffer();
-        };
-
-        websocket.onerror = function() {
-          handleError('WebSocket connection error.');
-        };
-
-        websocket.onmessage = function(event) {
-          let data;
-          try {
-            data = JSON.parse(event.data);
-          } catch (err) {
-            console.error('Invalid JSON:', event.data);
-            return;
-          }
-          if (!data || !data.type) return;
-
-          switch (data.type) {
-            case 'answer':
-              handleAnswer(data);
-              break;
-            case 'ice':
-              handleRemoteICECandidate(data.candidate);
-              break;
-            // The "offer" case is unlikely in this role, but can be handled if needed.
-            default:
-              break;
-          }
-        };
-
-        websocket.onclose = function() {
-          setStatus('Disconnected from signaling server.');
-        };
-      }
-
-      // Once the peer connection is established, load the remote HTTP interface.
-      // This example loads a URL in an iframe; adjust the URL or embedding method as needed.
-      function loadRemoteInterface() {
-        // const remoteUrl = 'https://remote.nas.service/interface'; // Replace with dynamic URL if provided via signaling http://192.168.0.2:88/admin/index.php
-        const remoteUrl = 'http://192.168.0.2:88/admin/index.php'; // Replace with dynamic URL if provided via signaling
-        remoteInterfaceIframe.src = remoteUrl;
-        iframeContainer.style.display = 'block';
-      }
-
-      // UI event: on clicking the "Connect" button, start the connection process.
-      connectBtn.addEventListener('click', function() {
-        const code = connectionCodeInput.value.trim();
-        if (!code) {
-          setStatus('Please enter a connection code.');
-          return;
-        }
-        setStatus('Connecting...');
-        startConnection(code);
-      });
-    })();
+    loadServiceBtn.addEventListener('click', () => {
+      // For demonstration, send an HTTP GET request message through the data channel.
+      // Update the URL to the appropriate local service endpoint (as seen by the NAS agent).
+      const httpRequest = {
+        method: "GET",
+        url: "http://localhost:8080/", // Example URL; adjust to your service
+        headers: {}
+      };
+      dataChannel.send(JSON.stringify(httpRequest));
+      log("Sent HTTP GET request via data channel.");
+    });
   </script>
 </body>
 </html>
